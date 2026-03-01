@@ -1,45 +1,58 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/png" href="/logo.png" />
-    <link rel="manifest" href="/manifest.json" />
-    <meta http-equiv="Content-Security-Policy" content="
-  default-src 'self';
-  script-src 'self';
-  style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
-  font-src 'self' https://fonts.gstatic.com;
-  img-src 'self' data:;
-  connect-src 'self' https://deepseek-api-key.lexsnitko.workers.dev;
-">
-    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded" rel="stylesheet" />
-    <title>Saviora App</title>
-    <style>
-      html, body {
-        width: 100vw;
-        height: 100vh;
-        margin: 0;
-        padding: 0;
-        /* Градиент или цвет на твой вкус: */
-        background: linear-gradient(135deg, #4B6CB7 0%, #182848 100%);
-        overflow-x: hidden;
-        overscroll-behavior: none;
-        touch-action: pan-y;
-        box-sizing: border-box;
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+   <meta 
+  name="viewport" 
+  content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, interactive-widget=resizes-content" 
+/>
+    <title>Saviora</title>
+    
+    <!-- ПОДКЛЮЧЕНИЕ ШРИФТОВ -->
+    <!-- Diphylleia (Эфирный), Italiana (Лого-стиль), Nunito (Округлый текст) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Diphylleia&family=Italiana&family=Nunito:wght@200..900&display=swap" rel="stylesheet">
+
+    <!-- TAILWIND CONFIG -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              // Основной текст (аналог SF Pro Rounded)
+              sans: ['Nunito', 'sans-serif'],
+              // Эфирный шрифт для заголовков (Diphylleia)
+              serif: ['Diphylleia', 'serif'],
+              // Шрифт для крупных акцентов/лого (аналог Boruna)
+              display: ['Italiana', 'serif'],
+            },
+            colors: {
+              background: '#0F0F11',
+            }
+          }
+        }
       }
-      #root {
-        min-height: 100vh;
-        min-width: 100vw;
-        box-sizing: border-box;
+    </script>
+    <style>
+      body {
+        background-color: #0F0F11;
+        color: white;
+        font-family: 'Nunito', sans-serif; /* По умолчанию округлый */
+      }
+      .no-scrollbar::-webkit-scrollbar {
+        display: none;
+      }
+      .no-scrollbar {
+        -ms-overflow-style: none;
+        scrollbar-width: none;
       }
     </style>
   </head>
   <body>
     <div id="root"></div>
-    <script type="module" src="/src/index.tsx"></script>
+    <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

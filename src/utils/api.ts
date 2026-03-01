@@ -1,1120 +1,228 @@
 // src/utils/api.ts
-export const API_URL = import.meta.env.VITE_API_URL as string;
 
 // === ТИПЫ ===
 
-export interface SimilarArtwork {
-  artworkId: string;        // ✅ глобальный ID из таблицы artworks
-  title: string;
-  author: string;
-  desc: string;
-  value?: string;           // URL картинки
-  type?: string;
-  imageUrl?: string;        // ✅ альтернативное название для value
-  rank?: number;            // ✅ позиция в списке похожих (из dream_similar_artworks)
-  score?: number;           // ✅ скор похожести (опционально)
-  uniqueId?: string;
+export interface Author {
+  id: string;
+  email: string;
+  displayName: string;
+  avatar: string | null;
 }
 
-export type FindSimilarArtworksResponse =
-  | { similarArtworks: SimilarArtwork[] }
-  | { error: string; message?: string };
+export interface FeedDream {
+  id: string;
+  title: string;
+  dreamText: string;
+  dreamSummary: string;
+  date: number;
+  published_at: number;
+  likes_count: number;
+  comments_count: number;
+  views_count: number;
+  user_liked: boolean;
+  author: Author;
+  blocks?: any[]; 
+  tags?: string[];
+  isPrivate?: boolean;
+}
+
+export interface FeedPagination {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+}
+
+export interface FeedResponse {
+  dreams: FeedDream[];
+  pagination: FeedPagination;
+}
+
+// Типы для чата
+export interface ChatConvo {
+  id: string;
+  date: string;
+  title: string;
+  category: string;
+  context: string;
+  messages: any[];
+}
+
+export interface Insight {
+  id: string;
+  text: string;
+  convoId: string;
+  date: string;
+}
 
 export interface User {
+  id: number;
   email: string;
-  trialDaysLeft: number;
+  name?: string;
+  xp?: number;
 }
 
-export interface Dream {
-  id: string;
-  dreamText: string;
-  title?: string | null;
-  date: number; // milliseconds
-  blocks?: any[];
-  globalFinalInterpretation?: string | null;
-  dreamSummary?: string | null;
-  autoSummary?: string | null;
-  similarArtworks?: any[];
-  category?: string | null;
-  context?: string | null;
-  is_public?: boolean;
+// === МОК ДАННЫЕ И УТИЛИТЫ ===
 
-}
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-export type ChatRole = 'user' | 'assistant';
+const MOCK_AUTHORS: Author[] = [
+  { id: '101', email: 'alice@dream.com', displayName: 'Алиса', avatar: null },
+  { id: '102', email: 'mark@dream.com', displayName: 'Марк', avatar: null },
+  { id: '1', email: 'me@saviora.com', displayName: 'Я', avatar: null },
+];
 
-export interface ChatMessageMeta {
-  kind?: string;
-  blockId?: string;
-  insightLiked?: boolean;
-  [key: string]: unknown;
-}
+const MOCK_FEED: FeedDream[] = [
+  {
+    id: 'd1', title: 'Полет сквозь потолок', dreamText: 'Снилось, что я лечу...', dreamSummary: '', date: Date.now(), published_at: Date.now(), likes_count: 12, comments_count: 3, views_count: 45, user_liked: false, author: MOCK_AUTHORS[0], tags: ['Осознанность'], isPrivate: false
+  },
+];
 
-export interface ChatMessage {
-  id: string;
-  role: ChatRole;
-  content: string;
-  meta?: ChatMessageMeta;
-  createdAt: string;
-  insightLiked?: boolean;
-}
-
-export interface DreamInsight {
-  messageId: string;
-  text: string;
-  createdAt: string;
-  blockId: string | null;
-  insightLiked?: boolean;
-  insightArtworksLiked?: boolean;
-  meta?: Record<string, unknown>;
-}
-
-// === ТИПЫ DAILY CONVO ===
-
-export interface DailyConvo {
-  id: string;
-  notes: string;
-  body?: string | null;
-  title?: string | null;
-  date?: number | string | null; // will be normalized to milliseconds where used
-  blocks?: any[];
-  globalFinalInterpretation?: string | null;
-  autoSummary?: string | null;
-  category?: string | null;
-  context?: string | null;
-  createdAt?: number | string | null;
-  updatedAt?: number | string | null;
-}
-
-export interface DailyConvoInsight {
-  messageId: string;
-  text: string;
-  createdAt: string;
-  blockId: string | null;
-  insightLiked?: boolean;
-  insightArtworksLiked?: boolean;
-  meta?: Record<string, unknown>;
-}
-
-// === БАЗОВЫЙ ЗАПРОС ===
-
-export async function request<T>(
-  path: string,
-  options: RequestInit = {},
-  withAuth = false
-): Promise<T> {
-  const headers = new Headers(options.headers);
-  headers.set('Content-Type', 'application/json');
-
-  if (withAuth) {
-    const token = localStorage.getItem('saviora_jwt');
-    if (token && token !== 'null' && token !== 'undefined') {
-      headers.set('Authorization', `Bearer ${token}`);
-    } else {
-      headers.delete('Authorization');
-    }
+const MOCK_MY_DREAMS: FeedDream[] = [
+  {
+    id: 'm1', title: 'Зеркальный лабиринт', dreamText: 'Стены из воды...', dreamSummary: '', date: Date.now(), published_at: Date.now(), likes_count: 0, comments_count: 0, views_count: 0, user_liked: false, author: MOCK_AUTHORS[2], tags: ['Вода'], isPrivate: true
   }
+];
 
-  const url = `${API_URL}${path}`;
-  let res: Response;
+// === ЛОГИКА СНОВ (ДНЕВНИК И ЛЕНТА) ===
 
-  try {
-    res = await fetch(url, {
-      ...options,
-      headers,
-    });
-  } catch (err) {
-    // сетевые ошибки
-    console.error('Network error when calling', url, options, err);
-    throw new Error(`Network error when calling ${path}: ${String(err)}`);
-  }
-
-  const text = await res.text();
-  let data: any;
-  try {
-    data = JSON.parse(text);
-  } catch {
-    data = { _raw: text };
-  }
-
-  if (!res.ok) {
-    // детальный лог для отладки
-    console.error('API error', {
-      url,
-      status: res.status,
-      statusText: res.statusText,
-      requestOptions: options,
-      responseText: text,
-      parsed: data,
-    });
-
-    // пробрасываем сообщение, содержащее статус и тело ответа
-    const errMsg = data?.error || data?.message || data?._raw || `Ошибка запроса: ${res.status}`;
-    const err = new Error(`${errMsg}`);
-    // @ts-ignore добавим поля для удобства при обработке в UI
-    (err as any).status = res.status;
-    (err as any).response = data;
-    throw err;
-  }
-
-  return data as T;
-}
-
-// === ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ===
-
-// Преобразует значение в миллисекунды (number) или undefined.
-// Если приходит число в секундах (меньше 1e12), умножаем на 1000.
-const normalizeTimestampToMs = (value: unknown): number | undefined => {
-  if (value == null || value === '') return undefined;
-  if (typeof value === 'number') {
-    return value < 1e12 ? value * 1000 : value;
-  }
-  if (typeof value === 'string' && !isNaN(Number(value))) {
-    const n = Number(value);
-    return n < 1e12 ? n * 1000 : n;
-  }
-  return undefined;
+export const getMockFeed = async (page = 1, limit = 10, sort = 'latest'): Promise<FeedResponse> => {
+  await delay(600);
+  return { dreams: MOCK_FEED, pagination: { page, limit, total: 1, totalPages: 1 } };
 };
 
-const normalizeCreatedAt = (value: unknown): string => {
-  if (typeof value === 'string') {
-    return value;
-  }
-  if (typeof value === 'number') {
-    return new Date(value).toISOString();
-  }
-  return new Date().toISOString();
+export const getMyDreams = async (): Promise<FeedDream[]> => {
+  await delay(500);
+  const stored = localStorage.getItem('saviora_my_dreams');
+  if (stored) return JSON.parse(stored);
+  localStorage.setItem('saviora_my_dreams', JSON.stringify(MOCK_MY_DREAMS));
+  return MOCK_MY_DREAMS;
 };
 
-const normalizeMeta = (meta: unknown): ChatMessageMeta | undefined => {
-  if (meta == null || meta === '') {
-    return undefined;
-  }
-
-  if (typeof meta === 'string') {
-    try {
-      const parsed = JSON.parse(meta);
-      return parsed && typeof parsed === 'object' ? (parsed as ChatMessageMeta) : undefined;
-    } catch {
-      return undefined;
-    }
-  }
-
-  if (typeof meta === 'object') {
-    return meta as ChatMessageMeta;
-  }
-
-  return undefined;
+export const getDreamById = async (id: string): Promise<FeedDream | undefined> => {
+  await delay(300);
+  const dreams = await getMyDreams(); // Ищем в своих
+  return dreams.find(d => d.id === id); 
 };
 
-const mapChatMessage = (message: any): ChatMessage => {
-  const normalizedMeta = normalizeMeta(message.meta);
-  const insightLiked = Boolean(normalizedMeta?.insightLiked ?? message.insightLiked);
-
-  return {
-    id: String(message.id),
-    role: message.role as ChatRole,
-    content: message.content,
-    createdAt: normalizeCreatedAt(message.createdAt ?? message.created_at),
-    meta: normalizedMeta,
-    insightLiked,
+export const createDream = async (text: string, title: string): Promise<FeedDream> => {
+  await delay(400);
+  const newDream: FeedDream = {
+    id: Date.now().toString(),
+    title: title || 'Без названия',
+    dreamText: text,
+    dreamSummary: '',
+    date: Date.now(),
+    published_at: Date.now(),
+    likes_count: 0, comments_count: 0, views_count: 0, user_liked: false,
+    author: MOCK_AUTHORS[2],
+    tags: [],
+    isPrivate: true,
+    blocks: []
   };
+  const current = await getMyDreams();
+  localStorage.setItem('saviora_my_dreams', JSON.stringify([newDream, ...current]));
+  return newDream;
 };
 
-// Нормализует объект dailyConvo, возвращая поля date/createdAt/updatedAt в миллисекундах (числа)
-const normalizeDailyConvo = (dc: any): DailyConvo => {
-  const dateMs = normalizeTimestampToMs(dc.date) ?? normalizeTimestampToMs(dc.createdAt) ?? Date.now();
-  const createdAtMs = normalizeTimestampToMs(dc.createdAt) ?? dateMs;
-  const updatedAtMs = normalizeTimestampToMs(dc.updatedAt) ?? createdAtMs;
-
-  return {
-    ...dc,
-    date: dateMs,
-    createdAt: createdAtMs,
-    updatedAt: updatedAtMs,
-  } as DailyConvo;
+export const toggleDreamLike = async (dreamId: string, status: boolean) => {
+  await delay(200); return { success: true };
 };
 
-export const generateAutoSummaryDailyConvo = (
-  dailyConvoId: string,
-  notes: string
-) =>
-  request<{ success: boolean; autoSummary: string }>('/generate_auto_summary_daily_convo', {
-    method: 'POST',
-    body: JSON.stringify({ dailyConvoId, notes }),
-  }, true);
+// === ЛОГИКА ЧАТА (ВОССТАНОВЛЕНА) ===
 
-// Нормализует dream объект (date -> ms)
-const normalizeDream = (d: any): Dream => {
-  const dateMs = normalizeTimestampToMs(d.date) ?? Date.now();
-  return {
-    ...d,
-    date: dateMs,
-  } as Dream;
+export const getConvoById = async (dateId: string) => {
+  await delay(100);
+  const key = `saviora_convo_${dateId}`;
+  const saved = localStorage.getItem(key);
+
+  if (saved) return JSON.parse(saved) as ChatConvo;
+
+  const newConvo: ChatConvo = {
+    id: dateId,
+    date: dateId,
+    title: 'Новая беседа',
+    category: '',
+    context: '',
+    messages: []
+  };
+  localStorage.setItem(key, JSON.stringify(newConvo));
+  return newConvo;
+};
+
+export const sendMessage = async (convoId: string, text: string, role: 'user' | 'assistant') => {
+  const key = `saviora_convo_${convoId}`;
+  const saved = localStorage.getItem(key);
+  
+  let convo = saved ? JSON.parse(saved) : { 
+    id: convoId, date: convoId, title: 'Беседа', category: '', context: '', messages: [] 
+  };
+  
+  // ГЕНЕРИРУЕМ УНИКАЛЬНЫЙ ID (чтобы не было ошибки ключей)
+  const newMessage = {
+    id: Date.now().toString() + Math.random().toString().slice(2),
+    text,
+    sender: role,
+    timestamp: new Date().toISOString()
+  };
+  
+  convo.messages.push(newMessage);
+  localStorage.setItem(key, JSON.stringify(convo));
+  
+  return newMessage;
+};
+
+export const updateConvoMetadata = async (convoId: string, metadata: Partial<ChatConvo>) => {
+  const key = `saviora_convo_${convoId}`;
+  const saved = localStorage.getItem(key);
+  if (saved) {
+    const convo = JSON.parse(saved);
+    const updated = { ...convo, ...metadata };
+    localStorage.setItem(key, JSON.stringify(updated));
+    return updated;
+  }
+};
+
+export const getAllConvos = async () => {
+  const keys = Object.keys(localStorage).filter(k => k.startsWith('saviora_convo_'));
+  const convos = keys.map(k => JSON.parse(localStorage.getItem(k) || '{}'));
+  return convos.filter(c => c.messages && c.messages.length > 0);
+};
+
+// === ИНСАЙТЫ ===
+export const getInsights = async (): Promise<Insight[]> => {
+  const data = localStorage.getItem('saviora_insights');
+  return data ? JSON.parse(data) : [];
+};
+
+export const toggleInsight = async (msgId: string, text: string, convoId: string) => {
+  const insights = await getInsights();
+  const index = insights.findIndex(i => i.id === msgId);
+
+  if (index >= 0) {
+    insights.splice(index, 1);
+    localStorage.setItem('saviora_insights', JSON.stringify(insights));
+    return false;
+  } else {
+    const newInsight: Insight = {
+      id: msgId,
+      text,
+      convoId,
+      date: new Date().toLocaleDateString('ru-RU')
+    };
+    insights.unshift(newInsight);
+    localStorage.setItem('saviora_insights', JSON.stringify(insights));
+    return true;
+  }
+};
+
+export const checkIsLiked = (msgId: string) => {
+  const data = localStorage.getItem('saviora_insights');
+  const insights = data ? JSON.parse(data) : [];
+  return insights.some((i: any) => i.id === msgId);
 };
 
 // === АВТОРИЗАЦИЯ ===
-
-export const login = (email: string, password: string) =>
-  request<{ token: string }>('/login', {
-    method: 'POST',
-    body: JSON.stringify({ email, password }),
-  });
-
-export const register = (email: string, password: string) =>
-  request<{ success: boolean }>('/register', {
-    method: 'POST',
-    body: JSON.stringify({ email, password }),
-  });
-
-export const getMe = () =>
-  request<User>('/me', {}, true);
-
-// === DREAMS CRUD ===
-
-export const getDreams = () =>
-  request<Dream[]>('/dreams', {}, true).then((data) =>
-    (data || []).map((d) => normalizeDream(d))
-  );
-
-export const getDream = (id: string) =>
-  request<Dream>(`/dreams/${id}`, {}, true).then((d) => normalizeDream(d));
-
-export const addDream = (
-  dreamText: string,
-  title?: string | null,
-  category?: string | null,
-  blocks: any[] = [],
-  globalFinalInterpretation: string | null = null,
-  dreamSummary: string | null = null,
-  similarArtworks: any[] = [],
-  date?: number
-) =>
-  request<Dream>(
-    '/dreams',
-    {
-      method: 'POST',
-      body: JSON.stringify({
-        dreamText,
-        title: title || null,
-        category: category || null,
-        blocks,
-        globalFinalInterpretation,
-        dreamSummary,
-        similarArtworks,
-        ...(typeof date === 'number' ? { date } : {}), // 👈 добавили
-      }),
-    },
-    true
-  ).then((d) => normalizeDream(d));
-
-export const updateDream = (
-  id: string,
-  dreamText: string,
-  title?: string | null,
-  blocks?: any[],
-  globalFinalInterpretation?: string | null,
-  dreamSummary?: string | null,
-  similarArtworks?: any[],
-  category?: string | null,
-  date?: number
-) =>
-  request<Dream>(
-    `/dreams/${id}`,
-    {
-      method: 'PUT',
-      body: JSON.stringify({
-        dreamText,
-        title: title ?? null,
-        blocks: blocks ?? [],
-        globalFinalInterpretation: globalFinalInterpretation ?? null,
-        dreamSummary: dreamSummary ?? null,
-        similarArtworks: similarArtworks ?? [],
-        category: category ?? null,
-        ...(typeof date === 'number' ? { date } : {}),
-      }),
-    },
-    true
-  ).then((d) => normalizeDream(d));
-
-export const deleteDream = (id: string) =>
-  request<{ success: boolean }>(`/dreams/${id}`, {
-    method: 'DELETE',
-  }, true);
-
-// === АНАЛИТИКА И ГЕНЕРАЦИЯ ===
-
-export const analyzeDream = (
-  blockText: string,
-  lastTurns?: any[],
-  extraSystemPrompt?: string,
-  dreamId?: string,
-  blockId?: string,
-  dreamSummary?: string | null,
-  autoSummary?: string | null,
-  artworkId?: string | null  // 👈 добавили
-) =>
-  request<any>('/analyze', {
-    method: 'POST',
-    body: JSON.stringify({
-      blockText,
-      lastTurns: lastTurns || [],
-      extraSystemPrompt,
-      dreamId,
-      blockId,
-      dreamSummary,
-      autoSummary,
-      artworkId: artworkId ?? null,  // 👈 пробросили
-    }),
-  }, true);
-
-export const findSimilarArtworks = (
-  dreamText: string,
-  dreamId: string,                      // ✅ обязательный параметр
-  globalFinalInterpretation?: string,
-  blockInterpretations?: string
-) =>
-  request<FindSimilarArtworksResponse>('/find_similar', {
-    method: 'POST',
-    body: JSON.stringify({
-      dreamText,
-      dreamId,                           // ✅ передаём dreamId
-      globalFinalInterpretation,
-      blockInterpretations,
-    }),
-  }, true);
-
-export const generateAutoSummary = (dreamId: string, dreamText: string) =>
-  request<{ success: boolean; autoSummary: string }>('/generate_auto_summary', {
-    method: 'POST',
-    body: JSON.stringify({ dreamId, dreamText }),
-  }, true);
-
-export const getChat = (dreamId: string, blockId: string) =>
-  request<{ messages: any[] }>(
-    `/chat?dreamId=${encodeURIComponent(dreamId)}&blockId=${encodeURIComponent(blockId)}`,
-    {},
-    true
-  ).then(({ messages }) => ({
-    messages: messages.map(mapChatMessage),
-  }));
-
-export const appendChat = (params: {
-  id?: string;
-  dreamId: string;
-  blockId: string;
-  role: ChatRole;
-  content: string;
-  meta?: ChatMessageMeta;
-}) =>
-  request<any>(
-    '/chat',
-    {
-      method: 'POST',
-      body: JSON.stringify(params),
-    },
-    true
-  ).then(mapChatMessage);
-
-export const clearChat = (dreamId: string, blockId: string) =>
-  request<{ success: boolean }>(
-    `/chat?dreamId=${encodeURIComponent(dreamId)}&blockId=${encodeURIComponent(blockId)}`,
-    { method: 'DELETE' },
-    true
-  );
-
-export const interpretBlock = (
-  blockText: string,
-  dreamId?: string,
-  blockId?: string,
-  dreamSummary?: string | null,
-  autoSummary?: string | null
-) =>
-  request<{ interpretation: string; isBlockInterpretation?: boolean }>(
-    '/interpret_block',
-    {
-      method: 'POST',
-      body: JSON.stringify({ 
-        blockText, 
-        dreamId, 
-        blockId,
-        dreamSummary,
-        autoSummary,
-      }),
-    },
-    true
-  );
-
-export const interpretFinal = (
-  dreamText: string,
-  blocks?: any[],
-  dreamId?: string
-) =>
-  request<{ interpretation: string }>(
-    '/interpret_final',
-    {
-      method: 'POST',
-      body: JSON.stringify({ dreamText, blocks, dreamId }),
-    },
-    true
-  );
-
-// === ИНСАЙТЫ ===
-
-export const toggleMessageLike = (
-  dreamId: string,
-  messageId: string,
-  liked: boolean,
-  blockId?: string
-) =>
-  request<any>(
-    `/dreams/${encodeURIComponent(dreamId)}/messages/${encodeURIComponent(messageId)}/like`,
-    {
-      method: 'PUT',
-      body: JSON.stringify({ liked, blockId }),
-    },
-    true
-  ).then(mapChatMessage);
-
-export const getDreamInsights = (
-  dreamId: string,
-  opts?: { metaKey?: 'insightArtworksLiked' | 'insightLiked' }
-) => {
-  const q = opts?.metaKey ? `?metaKey=${encodeURIComponent(opts.metaKey)}` : '';
-  return request<{ insights: DreamInsight[] }>(
-    `/dreams/${encodeURIComponent(dreamId)}/insights${q}`,
-    {},
-    true
-  ).then(({ insights }) => insights);
-};
-
-export const getDreamArtworksInsights = (dreamId: string) =>
-  getDreamInsights(dreamId, { metaKey: 'insightArtworksLiked' });
-
-export const toggleArtworkInsight = (
-  dreamId: string,          // ✅ UUID сна
-  messageId: string,
-  liked: boolean,
-  blockId: string,          // ✅ "artwork__0"
-  artworkId?: string,       // ✅ UUID произведения (опционально)
-) =>
-  request<{ message: any }>(
-    '/toggle_artwork_insight',
-    {
-      method: 'POST',
-      body: JSON.stringify({
-        dreamId,       // ✅ передаём dreamId
-        messageId,
-        liked,
-        blockId,
-        artworkId: artworkId ?? null,
-      }),
-    },
-    true
-  ).then((res) => res.message);
-
-// === MOOD API ===
-
-export const getMoodForDate = (dateStr: string) =>
-  request<{ context?: string }>(`/moods?date=${encodeURIComponent(dateStr)}`, {}, true)
-    .then(res => res.context ?? null);
-
-export const setMoodForDate = (dateStr: string, moodId: string) =>
-  request<void>(
-    '/moods',
-    {
-      method: 'PUT',
-      body: JSON.stringify({ date: dateStr, context: moodId }),
-    },
-    true
-  );
-
-export const setMoodForDream = (dreamId: string, moodId: string) =>
-  request<void>(
-    `/dreams/${encodeURIComponent(dreamId)}/mood`,
-    {
-      method: 'PUT',
-      body: JSON.stringify({ context: moodId }),
-    },
-    true
-  );
-
-// === DAILY CONVOS CRUD ===
-
-export const getDailyConvos = () =>
-  request<DailyConvo[]>('/daily_convos', {}, true).then((data) =>
-    (data || []).map((dc) => normalizeDailyConvo(dc))
-  );
-
-export const getDailyConvo = (id: string) =>
-  request<DailyConvo>(`/daily_convos/${encodeURIComponent(id)}`, {}, true).then((dc) =>
-    normalizeDailyConvo(dc)
-  );
-
-// addDailyConvo: добавил опциональный параметр date (ожидается seconds OR ms)
-export const addDailyConvo = (
-  notes: string,
-  title?: string | null,
-  blocks: any[] = [],
-  globalFinalInterpretation: string | null = null,
-  autoSummary: string | null = null,
-  date?: number
-) =>
-  request<DailyConvo>('/daily_convos', {
-    method: 'POST',
-    body: JSON.stringify({
-      notes,
-      title: title || null,
-      blocks,
-      globalFinalInterpretation,
-      autoSummary,
-      ...(typeof date !== 'undefined' ? { date } : {}),
-    }),
-  }, true).then((dc) => normalizeDailyConvo(dc));
-
-export const updateDailyConvo = (
-  id: string,
-  notes: string,
-  title?: string | null,
-  blocks?: any[],
-  globalFinalInterpretation?: string | null,
-  autoSummary?: string | null,
-  category?: string | null,
-  context?: string | null,
-  date?: number
-) =>
-  request<DailyConvo>(
-    `/daily_convos/${encodeURIComponent(id)}`,
-    {
-      method: 'PUT',
-      body: JSON.stringify({
-        notes,
-        title: title ?? null,
-        blocks: blocks ?? [],
-        globalFinalInterpretation: globalFinalInterpretation ?? null,
-        autoSummary: autoSummary ?? null,
-        category: category ?? null,
-        context: context ?? null, // <- теперь отправляем context
-        ...(typeof date === 'number' ? { date } : {}),
-      }),
-    },
-    true
-  ).then((dc) => normalizeDailyConvo(dc));
-
-export const deleteDailyConvo = (id: string) =>
-  request<{ success: boolean }>(`/daily_convos/${encodeURIComponent(id)}`, {
-    method: 'DELETE',
-  }, true);
-
-// === DAILY CONVO CHAT ===
-
-export const getDailyConvoChat = (dailyConvoId: string) =>
-  request<{ messages: any[] }>(
-    `/daily_chat?dailyConvoId=${encodeURIComponent(dailyConvoId)}`,
-    {},
-    true
-  ).then(({ messages }) => ({
-    messages: messages.map(mapChatMessage),
-  }));
-
-export const appendDailyConvoChat = (params: {
-  id?: string;
-  dailyConvoId: string;
-  role: ChatRole;
-  content: string;
-  meta?: ChatMessageMeta;
-}) =>
-  request<any>(
-    '/daily_chat',
-    {
-      method: 'POST',
-      body: JSON.stringify(params),
-    },
-    true
-  ).then(mapChatMessage);
-
-export const clearDailyConvoChat = (dailyConvoId: string) =>
-  request<{ success: boolean }>(
-    `/daily_chat?dailyConvoId=${encodeURIComponent(dailyConvoId)}`,
-    { method: 'DELETE' },
-    true
-  );
-
-// === DAILY CONVO ANALYTICS ===
-
-export const analyzeDailyConvo = (
-  notesText: string,
-  lastTurns?: any[],
-  extraSystemPrompt?: string,
-  dailyConvoId?: string,
-  blockId?: string, // Добавлен blockId
-  autoSummary?: string | null,
-  context?: string | null
-) =>
-  request<any>('/analyze_daily_convo', {
-    method: 'POST',
-    body: JSON.stringify({
-      notesText,
-      lastTurns: lastTurns || [],
-      extraSystemPrompt,
-      dailyConvoId,
-      blockId, // Передаем blockId
-      autoSummary,
-      context,
-    }),
-  }, true);
-
-/**
- * POST /interpret_block_daily_convo_context - интерпретация блока daily с контекстом
- */
-export const interpretBlockDailyConvo = (
-  notesText: string,
-  dailyConvoId: string,
-  blockId: string = 'main'
-) =>
-  request<{ interpretation: string; isBlockInterpretation?: boolean }>(
-    '/interpret_block_daily_convo_context',
-    {
-      method: 'POST',
-      body: JSON.stringify({ notesText, dailyConvoId, blockId }),
-    },
-    true
-  );
-
-/**
- * POST /interpret_final_daily_convo - итоговое толкование daily с контекстом
- */
-export const interpretFinalDailyConvo = (
-  notesText: string,
-  dailyConvoId: string,
-  blockId: string = 'main'
-) =>
-  request<{ interpretation: string }>(
-    '/interpret_final_daily_convo',
-    {
-      method: 'POST',
-      body: JSON.stringify({ notesText, dailyConvoId, blockId }),
-    },
-    true
-  );
-
-// === DAILY CONVO INSIGHTS ===
-
-export const toggleDailyConvoMessageLike = (
-  dailyConvoId: string,
-  messageId: string,
-  liked: boolean,
-  blockId?: string
-) =>
-  request<any>(
-    `/daily_convos/${encodeURIComponent(dailyConvoId)}/messages/${encodeURIComponent(messageId)}/like`,
-    {
-      method: 'PUT',
-      body: JSON.stringify({ liked, blockId }),
-    },
-    true
-  ).then(mapChatMessage);
-
-export const getDailyConvoInsights = (
-  dailyConvoId: string,
-  opts?: { metaKey?: 'insightArtworksLiked' | 'insightLiked' }
-) => {
-  const q = opts?.metaKey ? `?metaKey=${encodeURIComponent(opts.metaKey)}` : '';
-  return request<{ insights: DailyConvoInsight[] }>(
-    `/daily_convos/${encodeURIComponent(dailyConvoId)}/insights${q}`,
-    {},
-    true
-  ).then(({ insights }) => insights);
-};
-
-export const getDailyConvoArtworksInsights = (dailyConvoId: string) =>
-  getDailyConvoInsights(dailyConvoId, { metaKey: 'insightArtworksLiked' });
-
-export const toggleDailyConvoArtworkInsight = (
-  dailyConvoId: string,
-  messageId: string,
-  liked: boolean,
-  blockId?: string
-) =>
-  request<any>(
-    `/daily_convos/${encodeURIComponent(dailyConvoId)}/messages/${encodeURIComponent(messageId)}/artwork_like`,
-    {
-      method: 'PUT',
-      body: JSON.stringify({ liked, blockId }),
-    },
-    true
-  ).then(mapChatMessage);
-
-  // === ART CHAT API ===
-
-export const getArtChat = (
-  dreamId: string,        // ✅ чистый UUID сна
-  blockId: string,
-  artworkId?: string
-) =>
-  request<{ messages: any[] }>(
-    `/art_chat?dreamId=${encodeURIComponent(dreamId)}&blockId=${encodeURIComponent(blockId)}${artworkId ? `&artworkId=${encodeURIComponent(artworkId)}` : ''}`,
-    { method: 'GET' },
-    true
-  );
-
-export const appendArtChat = ({
-  dreamId,
-  blockId,
-  artworkId,
-  role,
-  content,
-}: {
-  dreamId: string;        // ✅ чистый UUID сна
-  blockId: string;
-  artworkId?: string;
-  role: 'user' | 'assistant';
-  content: string;
-}) =>
-  request<{ id: string; content: string; createdAt: number; meta?: any }>(
-    '/art_chat',
-    {
-      method: 'POST',
-      body: JSON.stringify({
-        dreamId,
-        blockId,
-        ...(artworkId && { artworkId }),
-        role,
-        content,
-      }),
-    },
-    true
-  );
-
-export const clearArtChat = (
-  dreamId: string,
-  blockId: string,
-  artworkId?: string
-) =>
-  request<{ success: boolean }>(
-    '/art_chat',
-    {
-      method: 'DELETE',
-      body: JSON.stringify({
-        dreamId,
-        blockId,
-        ...(artworkId && { artworkId }),
-      }),
-    },
-    true
-  );
-
-export const interpretBlockArt = (
-  dreamId: string,
-  blockId: string,
-  artworkId?: string
-) =>
-  request<{ interpretation: string; isBlockInterpretation?: boolean }>(
-    '/interpret_block_art',
-    {
-      method: 'POST',
-      body: JSON.stringify({ 
-        dreamId,
-        blockId,
-        ...(artworkId && { artworkId }),
-      }),
-    },
-    true
-  );
-
-  // ===== GOALS API =====
-
-export interface GoalFromServer {
-  goal_id: string;
-  user_id: string;
-  title: string;
-  description?: string | null;
-  category?: string | null;
-  goal_type: string;
-  target_count?: number | null;
-  unit?: string | null;
-  period?: string | null;
-  start_date: number;
-  due_date?: number | null;
-  status?: string | null;
-  created_at?: string | null;
-  updated_at?: string | null;
-  total_done: number;
-  progress_percent: number | null;
-}
-
-export interface TimelinePointFromServer {
-  date: string;
-  cumulative_amount: number;
-  percent?: number; // 👈 добавить
-}
-
-export interface GoalsResponse {
-  goals: GoalFromServer[];
-}
-
-export interface TimelineResponse {
-  points: TimelinePointFromServer[];
-}
-
-export const getGoals = () =>
-  request<GoalsResponse>('/goals', {}, true);
-
-export type GoalsTimelineRange = '7d' | '30d' | '60d' | '90d' | '365d' | 'all';
-
-export const getGoalsTimeline = (range: GoalsTimelineRange = '30d') =>
-  request<TimelineResponse>(
-    `/goals/timeline?range=${encodeURIComponent(range)}`,
-    {},
-    true,
-  );
-
-export const createGoal = (body: {
-  title: string;
-  description?: string | null;
-  category?: string | null;
-  goalType: string;
-  targetCount: number;
-  unit?: string | null;
-  period?: string | null;
-  startDate: number;
-  dueDate?: number | null;
-}) =>
-  request<{ id: string }>('/goals', {
-    method: 'POST',
-    body: JSON.stringify(body),
-  }, true);
-
-export const updateGoal = (goalId: string, body: {
-  title?: string;
-  description?: string | null;
-  category?: string | null;
-  targetCount?: number;
-  unit?: string | null;
-  period?: string | null;
-  dueDate?: number | null;
-}) =>
-  request<{ success: boolean }>(`/goals/${goalId}`, {
-    method: 'PUT',
-    body: JSON.stringify(body),
-  }, true);
-
-export const deleteGoal = (goalId: string) =>
-  request<{ success: boolean }>(`/goals/${goalId}`, {
-    method: 'DELETE',
-  }, true);
-
-export const addGoalEvent = (goalId: string, amount: number) =>
-  request<{ success: boolean }>(`/goals/${goalId}/event`, {
-    method: 'POST',
-    body: JSON.stringify({ amount }),
-  }, true);
-
-// ===== GAMIFICATION API =====
-
-export interface Level {
-  name: string;
-  emoji: string;
-  color: string;
-  min: number;
-  max: number;
-  level?: number | null;        // ✅ измени на number | null
-  isNew?: boolean;
-  icon?: string;
-  description?: string;
-}
-
-export interface Badge {
-  id: string;
-  name: string;
-  emoji: string;
-  category: string;
-  description: string;
-  unlocked?: boolean;
-  unlockedAt?: number | null;
-}
-
-export interface GoalBadgeProgress {
-  current: number;
-  target: number;
-}
-
-export interface GoalBadge {
-  badgeId: string;
-  name: string;
-  emoji: string;
-  description: string;
-  progress: GoalBadgeProgress;
-  advice?: string; // лучше optional
-  pinned?: boolean; // optional, если захочешь
-}
-
-export interface NextGoal {
-  badgeId: string;
-  name: string;
-  emoji: string;
-  description: string;
-  progress: {
-    current: number;
-    target: number;
-  };
-  advice: string;
-}
-
-export interface BadgeCategory {
-  name: string;
-  emoji: string;
-  badges: Badge[];
-}
-
-export interface GamificationData {
-  depthScoreTotal: number;
-  engagementScorePeriod?: number;
-
-  // 🔥 новое поле — дельта глубины за выбранный период
-  depthDeltaInPeriod?: number;
-
-  level: Level;
-  badges: {
-    unlocked: Badge[];
-    new: Badge[];
-    unseen: Badge[];
-    all: Badge[];
-    categories?: BadgeCategory[];
-  };
-
-  currentGoal?: GoalBadge | null;
-  recommendedGoal?: GoalBadge | null;
-}
-
-export const setCurrentGoal = (badgeId: string | null) =>
-  request<{ success: boolean }>(
-    '/set-current-goal',
-    {
-      method: 'POST',
-      body: JSON.stringify({ badgeId }),
-    },
-    true
-  );
-
-export const markBadgesAsSeen = (badgeIds: string[]) =>
-  request<{ success: boolean }>(
-    '/mark-badges-seen',
-    {
-      method: 'POST',
-      body: JSON.stringify({ badgeIds }),
-    },
-    true
-  );
-
-  // === SUBSCRIPTIONS ===
-
-export type Plan = {
-  id: string;
-  plan_code?: string | null;
-  title: string;
-  description?: string | null;
-  price: string; // human readable, e.g. "5 BYN" or "5"
-  emoji: string;
-  visible?: boolean;
-};
-
-export const getPlans = () =>
-  request<{ plans: Plan[] }>('/plans', {}, true).then(res => res.plans || []);
-
-export const postSubscriptionChoice = (body: {
-  plan_id?: string | null;
-  plan_code?: string | null;
-  chosen_emoji?: string | null;
-  chosen_price?: string | null;
-  is_custom_price?: 0 | 1;
-  trial_days_left?: number | null;
-  source?: string | null;
-  notes?: string | null;
-}) =>
-  request<{ ok?: boolean; choice?: any }>('/subscription/choice', {
-    method: 'POST',
-    body: JSON.stringify(body),
-  }, true);
-
-export const postSubscriptionModalOpen = (body: { choice_id?: string | null } = {}) =>
-  request<{ ok?: boolean }>('/subscription/modal-open', {
-    method: 'POST',
-    body: JSON.stringify(body),
-  }, true);
-
-export const getSubscriptionChoices = (limit = 50) =>
-  request<{ choices: any[] }>(`/subscription/choices?limit=${encodeURIComponent(String(limit))}`, {}, true)
-    .then(res => res.choices || []);
-
-    
-    // === ROLLING SUMMARY ===
-
-export interface RollingSummaryResponse {
-  summary: string;
-  lastMessageCount: number;
-}
-
-export const getRollingSummary = (dreamId: string, blockId: string, artworkId?: string) =>
-  request<RollingSummaryResponse>(
-    `/rolling_summary?dreamId=${encodeURIComponent(dreamId)}&blockId=${encodeURIComponent(blockId)}${artworkId ? `&artworkId=${encodeURIComponent(artworkId)}` : ''}`,
-    {},
-    true
-  );
-
-  // === QUIZ API ===
-
-export interface QuizQuestion {
-  type: 'choice' | 'reflection';
-  text: string;
-  options?: string[];
-  correctIndex?: number;
-}
-
-export interface Quiz {
-  quizId: string;
-  questions: QuizQuestion[];
-  sourceType: string;
-  sourceId: string;
-  contextTitle?: string; 
-  contextText?: string;
-}
-
-export interface QuizAnswer {
-  questionIndex: number;
-  userAnswer: string;
-}
-
-export interface QuizResult {
-  score: number;
-  totalQuestions: number;
-  depthBonus: number;
-}
-
-export interface QuizStats {
-  total_quizzes: number;
-  total_completed: number;
-  total_score: number;
-  streak_days: number;
-  last_quiz_date?: number;
-}
-
-export const generateQuiz = (
-  sourceType: 'dream' | 'block' | 'final' | 'daily' | 'artwork' | 'general',
-  sourceId: string,
-  blockId?: string,
-  artworkId?: string
-) =>
-  request<Quiz>('/generate_quiz', {
-    method: 'POST',
-    body: JSON.stringify({ sourceType, sourceId, blockId, artworkId }),
-  }, true);
-
-export const submitQuiz = (quizId: string, answers: QuizAnswer[]) =>
-  request<QuizResult>('/submit_quiz', {
-    method: 'POST',
-    body: JSON.stringify({ quizId, answers }),
-  }, true);
-
-export const getQuizStats = () =>
-  request<QuizStats>('/quiz_stats', {}, true);
+export const register = async () => ({ success: true, user: { id: 1 } });
+export const login = async () => ({ success: true, user: { id: 1 } });
+export const addXp = async (id: number, amount: number) => ({ id, xp: amount });

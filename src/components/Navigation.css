@@ -1,0 +1,129 @@
+:root {
+  /* Цвет меню: Твой фиолетовый (#7355af) с прозрачностью 60% */
+  --nav-glass-bg: rgb(115, 85, 175);  
+  
+  /* Цвет шарика: Твой градиент */
+  --circle-gradient: linear-gradient(135deg, #6974dc, #7355af);
+  
+  /* Беловатая обводка (20% белого) */
+  --glass-border: rgba(255, 255, 255, 0.2);
+}
+
+.navigation {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 85px; /* Высота меню */
+
+  
+  /* --- СТЕКЛЯННЫЙ ЭФФЕКТ --- */
+  background: var(--nav-glass-bg);
+  
+  /* Размытие фона под меню */
+  backdrop-filter: blur(40px) saturate(180%);
+  -webkit-backdrop-filter: blur(40px) saturate(180%);
+  
+  
+  /* Беловатая обводка сверху и по бокам */
+  border-top: 1px solid var(--glass-border);
+  border-left: 1px solid rgba(255, 255, 255, 0.05);
+  border-right: 1px solid rgba(255, 255, 255, 0.05);
+  
+  /* Скругления */
+  border-radius: 30px 30px 0 0;
+  
+  /* Тень для объема */
+  box-shadow: 0 -10px 40px rgba(41, 5, 71, 0.3);
+  
+  z-index: 100;
+  display: flex;
+  justify-content: center;
+  padding-bottom: 10px;
+}
+
+.nav-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  width: 100%;
+  max-width: 450px;
+  height: 100%;
+  position: relative;
+}
+
+.nav-item {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 2;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.nav-link {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+
+/* --- ИКОНКИ --- */
+.nav-icon {
+  display: block;
+  transition: 0.4s cubic-bezier(0.68, -0.55, 0.27, 1.55); /* Пружинистая анимация */
+  color: rgba(255, 255, 255, 0.5); /* Полупрозрачный белый */
+}
+
+/* 
+   АКТИВНАЯ ИКОНКА (ЦЕНТРОВКА)
+   Меню высотой 85px. Центр контента ~42px от верха.
+   Шарик висит на top: -30px. Его центр = 0px относительно верха меню.
+   Значит, нужно поднять иконку на 42px вверх.
+*/
+.nav-item.active .nav-icon {
+  color: rgb(255, 255, 255);
+  transform: translateY(-35px); /* Идеальный центр шарика */
+  filter: drop-shadow(0 2px 3px rgba(52, 25, 63, 0.2));
+}
+
+/* --- ТЕКСТ --- */
+.nav-text {
+  position: absolute;
+  bottom: 12px;
+  color: white;
+  font-weight: 600;
+  font-size: 12px;
+  letter-spacing: 0.5px;
+  opacity: 0;
+  transform: translateY(10px);
+  transition: 0.3s ease-out;
+}
+
+.nav-item.active .nav-text {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* --- ПАРЯЩИЙ ШАР --- */
+.indicator {
+  position: absolute;
+  top: -30px; /* Вылезает наполовину */
+  width: 60px;
+  height: 60px;
+  background: var(--circle-gradient);
+  border-radius: 50%;
+  
+  /* Красивое свечение вокруг шарика */
+  box-shadow: 
+    0 5px 15px rgba(118, 75, 162, 0.6),
+    inset 0 2px 2px rgba(255,255,255,0.4); /* Блик сверху */
+    
+  border: 4px solid rgba(255, 255, 255, 0.1); /* Полупрозрачная рамка шарика */
+  
+  
+  z-index: 1;
+  
+}

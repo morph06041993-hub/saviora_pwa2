@@ -1,5 +1,5 @@
-// src/features/feed/types.ts
 export interface Author {
+  id: string;
   email: string;
   displayName: string;
   avatar: string | null;
@@ -14,14 +14,15 @@ export interface FeedDream {
   published_at: number;
   likes_count: number;
   comments_count: number;
-  views_count: number; // ✅ добавили
+  views_count: number;
   user_liked: boolean;
   author: Author;
   blocks?: any[];
+  tags?: string[];
 }
 
 export interface Comment {
-  id: number;
+  id: string;
   text: string;
   created_at: number;
   author: Author;

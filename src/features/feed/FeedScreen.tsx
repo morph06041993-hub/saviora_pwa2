@@ -1,420 +1,163 @@
-// src/features/feed/FeedScreen.tsx
-import React, { useState, useRef, useCallback, useEffect } from 'react';
-import {
-  Box,
-  Container,
-  Typography,
-  CircularProgress,
-  Alert,
-  IconButton,
-  Tabs,
-  Tab,
-} from '@mui/material';
-import { ArrowBackIosNew } from '@mui/icons-material';
+import React, { useState } from 'react';
 import { useFeed } from './useFeed';
 import { DreamCard } from './DreamCard';
-import { DreamCardSkeleton } from './DreamCardSkeleton';
-import { motion, AnimatePresence } from 'framer-motion';
-import { useNavigate } from 'react-router-dom';
-import { getMe } from '../../utils/api';
-import type { FeedDream } from './types';
+import Navigation from '../../components/Navigation';
+import { Search, X, Send } from 'lucide-react';
 
-// 🌙✨ ПАСТЕЛЬНАЯ ПАЛИТРА
-const dreamPalette = {
-  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-  glass: {
-    bg: 'rgba(255, 255, 255, 0.06)',
-    border: 'rgba(255, 255, 255, 0.10)',
-    shadow: '0 8px 24px rgba(11,8,36,0.16)',
-  },
-};
-
-const HEADER_BASE = 56;
-
-export const FeedScreen: React.FC = () => {
-  const navigate = useNavigate();
-  const [sort, setSort] = useState<'latest' | 'popular'>('latest');
-  const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null);
-  const [featuredDream, setFeaturedDream] = useState<FeedDream | null>(null);
+export const FeedScreen = () => {
+  const { dreams, loading, error, toggleLike, changeSort } = useFeed();
+  const [activeTab, setActiveTab] = useState<'latest' | 'popular'>('latest');
   
-  const {
-    dreams,
-    loading,
-    loadingMore,
-    error,
-    hasMore,
-    toggleLike,
-    loadMore,
-    changeSort,
-  } = useFeed({
-    initialPage: 1,
-    limit: 20,
-    sort,
-  });
+  // Состояние для комментариев
+  const [openCommentsId, setOpenCommentsId] = useState<string | null>(null);
+  const [commentText, setCommentText] = useState('');
+  
+  // Хранилище комментариев
+  const [commentsMap, setCommentsMap] = useState<Record<string, any[]>>({});
 
-  const [localDreams, setLocalDreams] = useState(dreams);
-
-  useEffect(() => {
-    const fetchCurrentUser = async () => {
-      try {
-        const user = await getMe();
-        setCurrentUserEmail(user.email);
-      } catch (error) {
-        console.error('Error fetching current user:', error);
-      }
-    };
-
-    fetchCurrentUser();
-  }, []);
-
-  useEffect(() => {
-    setLocalDreams(dreams);
-  }, [dreams]);
-
-  // 🌟 Выбираем Hero Dream БЕЗ ДУБЛИРОВАНИЯ
-  useEffect(() => {
-    if (localDreams.length === 0) {
-      setFeaturedDream(null);
-      return;
-    }
-
-    let featured: FeedDream;
-
-    if (sort === 'latest') {
-      // ДЛЯ "СВЕЖЕЕ": самый активный из первых 5
-      const topRecent = localDreams.slice(0, 5).reduce((prev, current) => {
-        const prevScore = prev.likes_count + prev.comments_count * 2;
-        const currentScore = current.likes_count + current.comments_count * 2;
-        return currentScore > prevScore ? current : prev;
-      });
-      featured = topRecent;
-    } else {
-      // ДЛЯ "ПОПУЛЯРНОЕ": исключаем топ-5 свежих
-      const olderDreams = localDreams.slice(5);
-      
-      if (olderDreams.length > 0) {
-        // Самый популярный среди старых снов
-        featured = olderDreams.reduce((prev, current) => {
-          const prevScore = prev.likes_count + prev.comments_count * 2 + prev.views_count * 0.1;
-          const currentScore = current.likes_count + current.comments_count * 2 + current.views_count * 0.1;
-          return currentScore > prevScore ? current : prev;
-        });
-      } else {
-        // Если снов меньше 5, берём самый популярный из всех
-        featured = localDreams.reduce((prev, current) => {
-          const prevScore = prev.likes_count + prev.comments_count * 2 + prev.views_count * 0.1;
-          const currentScore = current.likes_count + current.comments_count * 2 + current.views_count * 0.1;
-          return currentScore > prevScore ? current : prev;
-        });
-      }
-    }
-
-    setFeaturedDream(featured);
-  }, [localDreams, sort]);
-
-  const observerTarget = useRef<HTMLDivElement>(null);
-
-  const handleObserver = useCallback(
-    (entries: IntersectionObserverEntry[]) => {
-      const [target] = entries;
-      if (target.isIntersecting && hasMore && !loadingMore && !loading) {
-        loadMore();
-      }
-    },
-    [hasMore, loadingMore, loading, loadMore]
-  );
-
-  useEffect(() => {
-    const element = observerTarget.current;
-    if (!element) return;
-
-    const option = {
-      root: null,
-      rootMargin: '100px',
-      threshold: 0,
-    };
-
-    const observer = new IntersectionObserver(handleObserver, option);
-    observer.observe(element);
-
-    return () => {
-      if (element) observer.unobserve(element);
-    };
-  }, [handleObserver]);
-
-  const handleTabChange = (_: React.SyntheticEvent, newValue: 'latest' | 'popular') => {
-    if (newValue !== sort) {
-      setSort(newValue);
-      changeSort(newValue);
-    }
+  const handleTabChange = (tab: 'latest' | 'popular') => {
+    setActiveTab(tab);
+    changeSort(tab);
   };
 
-  const handleUnpublish = (dreamId: string) => {
-    setLocalDreams((prev) => prev.filter((d) => d.id !== dreamId));
-    if (featuredDream?.id === dreamId) {
-      setFeaturedDream(null);
-    }
+  const handleCommentClick = (dreamId: string) => {
+    setOpenCommentsId(dreamId);
   };
 
-  const regularDreams = localDreams.filter(d => d.id !== featuredDream?.id);
+  const handleSendComment = (e?: React.FormEvent) => {
+    e?.preventDefault();
+    
+    if (!commentText.trim() || !openCommentsId) return;
+    
+    const newComment = {
+      id: Date.now(),
+      text: commentText,
+      author: 'Я', 
+      time: 'Только что'
+    };
+    
+    setCommentsMap(prev => ({
+      ...prev,
+      [openCommentsId]: [...(prev[openCommentsId] || []), newComment]
+    }));
 
-  // 🎨 Динамический стиль для Hero Card
-  const heroBadge = sort === 'latest' 
-    ? { 
-        gradient: 'linear-gradient(90deg, rgba(100,240,180,0.8), rgba(120,255,200,0.8))',
-      }
-    : { 
-        gradient: 'linear-gradient(90deg, rgba(255,200,80,0.8), rgba(255,180,100,0.8))',
-      };
+    setCommentText('');
+  };
+
+  const currentComments = openCommentsId ? (commentsMap[openCommentsId] || []) : [];
 
   return (
-    <Box
-      sx={{
-        minHeight: '100vh',
-        height: '100vh',
-        overflow: 'auto',
-        background: dreamPalette.background,
-        color: '#fff',
-        // ✅ УБРАЛИ paddingTop — safe area теперь только на header
-        paddingBottom: 'env(safe-area-inset-bottom)',
-      }}
-    >
-      {/* Header с вкладками */}
-      <Box
-        sx={{
-          position: 'sticky',
-          top: 0, // ✅ ИЗМЕНЕНО: убрали env(safe-area-inset-top)
-          left: 0,
-          right: 0,
-          zIndex: 1400,
-          background: 'rgba(255,255,255,0.10)',
-          backdropFilter: 'blur(10px)',
-          WebkitBackdropFilter: 'blur(10px)',
-          borderBottomLeftRadius: 24,
-          borderBottomRightRadius: 24,
-          border: '1px solid rgba(255,255,255,0.14)',
-          boxShadow: '0 8px 28px rgba(41, 52, 98, 0.12)',
-          // ✅ ДОБАВИЛИ: safe area теперь через padding
-          paddingTop: 'env(safe-area-inset-top)',
-        }}
-      >
-        {/* Строка с кнопкой назад и заголовком */}
-        <Box
-          sx={{
-            height: `${HEADER_BASE}px`,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            px: 2,
-            position: 'relative',
-          }}
-        >
-          <IconButton
-            onClick={() => navigate(-1)}
-            aria-label="Назад"
-            sx={{
-              position: 'absolute',
-              left: 12,
-              color: '#fff',
-              '@media (hover: hover)': {
-                '&:hover': { bgcolor: 'rgba(255,255,255,0.12)' },
-              },
-            }}
-          >
-            <ArrowBackIosNew fontSize="small" />
-          </IconButton>
+    <div className="min-h-screen bg-gradient-to-br from-[#6875dc] to-[#7355af] text-white font-sans pb-24 relative overflow-hidden">
+      
+      {/* ФОН */}
+      <div className="absolute top-[-10%] left-[-10%] w-[300px] h-[300px] bg-white/10 rounded-full blur-[30px] pointer-events-none" />
+      <div className="absolute bottom-[-10%] right-[-10%] w-[300px] h-[300px] bg-purple-900/20 rounded-full blur-[100px] pointer-events-none" />
+       <img src="/logo.png" className="watermark-logo" alt="" />
 
-          <Typography
-            sx={{
-              fontWeight: 600,
-              fontSize: '1.05rem',
-              color: 'rgba(255,255,255,0.95)',
-            }}
-          >
-            Лента снов 🌙
-          </Typography>
-        </Box>
+      {/* HEADER + TABS */}
+      <div className="sticky top-0 z-30 pt-12 pb-2 px-5 bg-gradient-to-b from-[#6875dc]/90 to-[#6875dc]/0 backdrop-blur-sm">
+        <div className="flex items-center justify-between mb-4">
+          {/* ЗАГОЛОВОК: СТРОГИЙ, КАК ТЫ ПРОСИЛА */}
+          <h1 className="text-2xl font-serif font-bold">
+            Лента снов
+          </h1>
+        </div>
+        
+        <div className="flex gap-4 border-b border-white/10 pb-0">
+          <button onClick={() => handleTabChange('latest')} className={`text-sm font-bold transition-all relative pb-2 px-1 ${activeTab === 'latest' ? 'text-white' : 'text-white/40'}`}>
+            Свежее {activeTab === 'latest' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-white rounded-full" />}
+          </button>
+          <button onClick={() => handleTabChange('popular')} className={`text-sm font-bold transition-all relative pb-2 px-1 ${activeTab === 'popular' ? 'text-white' : 'text-white/40'}`}>
+            Популярное {activeTab === 'popular' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-white rounded-full" />}
+          </button>
+        </div>
+      </div>
 
-        {/* 🔥 СВАЙПАБЕЛЬНЫЕ ВКЛАДКИ */}
-        <Tabs
-          value={sort}
-          onChange={handleTabChange}
-          variant="fullWidth"
-          sx={{
-            minHeight: 44,
-            '& .MuiTabs-indicator': {
-              height: 3,
-              background: heroBadge.gradient,
-              borderRadius: '3px 3px 0 0',
-            },
-            '& .MuiTab-root': {
-              color: 'rgba(255,255,255,0.6)',
-              fontWeight: 600,
-              fontSize: '0.9rem',
-              textTransform: 'none',
-              minHeight: 44,
-              transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-              '&.Mui-selected': {
-                color: '#fff',
-                textShadow: '0 2px 8px rgba(0,0,0,0.2)',
-              },
-            },
-          }}
-        >
-          <Tab value="latest" label="🌟 Свежее" />
-          <Tab value="popular" label="⭐ Популярное" />
-        </Tabs>
-      </Box>
-
-      {/* Контент */}
-      <Container
-        maxWidth="md"
-        sx={{
-          pt: 3,
-          pb: 4,
-        }}
-      >
-        {/* Описание */}
-        <Typography
-          variant="body2"
-          sx={{
-            color: 'rgba(255,255,255,0.85)',
-            mb: 3,
-            textAlign: 'center',
-          }}
-        >
-          Исследуйте сновидения других пользователей ✨
-        </Typography>
-
-        {error && (
-          <Alert
-            severity="error"
-            sx={{
-              mb: 3,
-              background: 'rgba(220,38,38,0.15)',
-              color: '#fff',
-              border: '1px solid rgba(220,38,38,0.3)',
-              borderRadius: 3,
-            }}
-          >
-            {error}
-          </Alert>
-        )}
-
-        {loading && localDreams.length === 0 ? (
-          <Box display="flex" flexDirection="column" gap={3}>
-            {Array.from({ length: 3 }).map((_, index) => (
-              <DreamCardSkeleton key={index} />
+      {/* CONTENT */}
+      <div className="px-5 mt-4 z-10 relative">
+        {loading && <div className="py-20 text-center flex flex-col items-center"><div className="animate-spin w-6 h-6 border-2 border-white/20 border-t-white rounded-full mb-3"/><p className="text-white/40 text-xs">Загружаем сновидения...</p></div>}
+        {!loading && !error && (
+          <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            {dreams.map(dream => (
+              <DreamCard key={dream.id} dream={dream} onLike={toggleLike} onCommentClick={handleCommentClick} />
             ))}
-          </Box>
-        ) : localDreams.length === 0 ? (
-          <Box
-            sx={{
-              textAlign: 'center',
-              py: 8,
-              background: dreamPalette.glass.bg,
-              border: `1px solid ${dreamPalette.glass.border}`,
-              borderRadius: 3,
-              boxShadow: dreamPalette.glass.shadow,
-            }}
-          >
-            <Typography variant="h6" sx={{ color: '#fff', mb: 2 }}>
-              Пока нет снов
-            </Typography>
-            <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.7)' }}>
-              Будьте первым, кто поделится своим сновидением! ✨
-            </Typography>
-          </Box>
-        ) : (
-          <>
-            {/* 🌟 HERO CARD - с цветной полоской */}
-            {featuredDream && (
-              <AnimatePresence mode="wait">
-                <motion.div
-                  key={`${featuredDream.id}-${sort}`}
-                  initial={{ opacity: 0, x: sort === 'latest' ? -20 : 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: sort === 'latest' ? 20 : -20 }}
-                  transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
-                >
-                  <Box
-                    sx={{
-                      position: 'relative',
-                      mb: 3,
-                      borderRadius: 4,
-                      overflow: 'hidden',
-                      '&::before': {
-                        content: '""',
-                        position: 'absolute',
-                        top: 0,
-                        left: 0,
-                        right: 0,
-                        height: 4,
-                        background: heroBadge.gradient,
-                        zIndex: 1,
-                      },
-                    }}
-                  >
-                    <DreamCard
-                      dream={featuredDream}
-                      onLike={toggleLike}
-                      onUnpublish={handleUnpublish}
-                      currentUserEmail={currentUserEmail || undefined}
-                    />
-                  </Box>
-                </motion.div>
-              </AnimatePresence>
-            )}
-
-            {/* Список остальных снов */}
-            <Box display="flex" flexDirection="column" gap={3}>
-              {regularDreams.map((dream, index) => (
-                <motion.div
-                  key={dream.id}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.3, delay: Math.min(index * 0.05, 0.3) }}
-                >
-                  <DreamCard 
-                    dream={dream} 
-                    onLike={toggleLike}
-                    onUnpublish={handleUnpublish}
-                    currentUserEmail={currentUserEmail || undefined}
-                  />
-                </motion.div>
-              ))}
-            </Box>
-
-            {/* Infinite scroll trigger */}
-            <Box
-              ref={observerTarget}
-              sx={{
-                display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'center',
-                minHeight: 80,
-                mt: 3,
-              }}
-            >
-              {loadingMore && (
-                <CircularProgress size={32} sx={{ color: '#fff' }} />
-              )}
-              {!hasMore && localDreams.length > 0 && (
-                <Typography
-                  variant="body2"
-                  sx={{
-                    color: 'rgba(255,255,255,0.6)',
-                    textAlign: 'center',
-                    py: 2,
-                  }}
-                >
-                  Вы просмотрели все сны ✨
-                </Typography>
-              )}
-            </Box>
-          </>
+          </div>
         )}
-      </Container>
-    </Box>
+      </div>
+
+      {/* === МОДАЛКА КОММЕНТАРИЕВ === */}
+      {openCommentsId && (
+        <div className="fixed inset-0 z-[200] flex items-end justify-center sm:items-center p-0 sm:p-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setOpenCommentsId(null)} />
+          
+          <div className="relative w-full sm:max-w-lg bg-[#7355af] border border-white/20 rounded-t-[32px] sm:rounded-3xl p-0 animate-in slide-in-from-bottom duration-300 flex flex-col h-[75vh] shadow-2xl overflow-hidden">
+            
+            {/* Header */}
+            <div className="flex justify-between items-center p-6 border-b border-white/10 shrink-0 bg-[#7355af] rounded-t-[32px]">
+              <h3 className="text-xl font-serif font-bold text-white">Комментарии</h3>
+              <button onClick={() => setOpenCommentsId(null)} className="p-2 -mr-2 text-white/50 hover:text-white bg-white/5 rounded-full">
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Список */}
+            <div className="flex-1 overflow-y-auto p-5 space-y-4 bg-[#7355af] pb-24">
+              {currentComments.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center text-center opacity-40">
+                  <p className="text-sm text-white">Пока нет комментариев.<br/>Будьте первым!</p>
+                </div>
+              ) : (
+                currentComments.map((comment) => (
+                  <div key={comment.id} className="flex gap-3 animate-in fade-in slide-in-from-bottom-2">
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center text-xs font-bold shrink-0 text-white">
+                      {comment.author[0]}
+                    </div>
+                    <div className="bg-white/10 rounded-2xl p-3 rounded-tl-none border border-white/5 backdrop-blur-sm">
+                      <div className="flex items-baseline gap-2 mb-1">
+                        <p className="text-xs text-white/60 font-bold">{comment.author}</p>
+                        <span className="text-[10px] text-white/30">{comment.time}</span>
+                      </div>
+                      <p className="text-sm text-white/90">{comment.text}</p>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* ПОЛЕ ВВОДА (ПРИБИТО К НИЗУ) */}
+            <div className="absolute bottom-0 left-0 right-0 p-4 bg-[#7355af] border-t border-white/10 z-30 pb-8">
+              <form 
+                onSubmit={handleSendComment}
+                className="flex items-center gap-2 bg-white/10 border border-white/10 rounded-[28px] p-1.5 pl-5 shadow-lg backdrop-blur-md relative"
+              >
+                <input
+                  type="text"
+                  value={commentText}
+                  onChange={(e) => setCommentText(e.target.value)}
+                  placeholder="Напиши сообщение..."
+                  className="flex-1 bg-transparent border-none outline-none text-sm text-white placeholder:text-white/50 font-sans h-10"
+                  autoFocus
+                />
+                
+                <button 
+                  type="submit"
+                  disabled={!commentText.trim()}
+                  className={`w-10 h-10 rounded-[20px] flex items-center justify-center transition-all ${
+                    commentText.trim() 
+                      ? 'bg-white text-[#5b50d6] shadow-md active:scale-90' 
+                      : 'bg-white/5 text-white/20 cursor-not-allowed'
+                  }`}
+                >
+                  <Send size={18} className={commentText.trim() ? "ml-0.5" : "ml-0"} />
+                </button>
+              </form>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      <Navigation />
+    </div>
   );
 };

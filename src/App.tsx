@@ -1,213 +1,116 @@
-import {
-  BrowserRouter,
-  Routes,
-  Route,
-  Navigate,
-  useParams,
-} from 'react-router-dom';
-import { AuthScreen } from './features/auth/AuthScreen';
-import { DreamsScreen } from './features/dreams/DreamsScreen';
-import { PrivateRoute } from './features/auth/PrivateRoute';
-import { DreamChat } from './features/dreams/DreamChat';
-import { DreamEditor } from './features/dreams/DreamEditor';
-import { DreamFinalDialog } from './features/dreams/DreamFinalDialog';
-import { ProfileScreen } from './features/profile/ProfileScreen';
-import { DreamsByDateScreen } from './features/dreams/DreamsByDateScreen';
-import { MonthDashboardScreen } from './features/profile/MonthDashboardScreen';
-import { MetricDetailScreen } from './features/profile/MetricDetailScreen';
-import { DreamDetail } from './features/dreams/DreamDetail';
-import { UserProfileScreen } from './features/profile/UserProfileScreen';
-import { ProfileEditForm } from './features/profile/ProfileEditForm';
-import { ProfileProvider } from './features/profile/ProfileContext';
-import { SimilarArtworksScreen } from './features/dreams/SimilarArtworksScreen';
-import { ArtworkChat } from './features/dreams/ArtworkChat';
+import React, { useEffect } from 'react';
+import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
+import { useAuth } from './features/auth/AuthProvider';
+import { FeedbackModal } from './components/FeedbackModal'; // <--- Импорт модалки
 
-import { FeedScreen } from 'src/features/feed/FeedScreen';
+// Импорт экранов
+import { HomeScreen } from './screens/HomeScreen';
+import RegisterScreen from './screens/RegisterScreen';
+import AuthScreen from './screens/AuthScreen';
+import MoodSelectionScreen from './screens/MoodSelectionScreen';
+import MoodDetailScreen from './screens/MoodDetailScreen';
+import { ChatScreen } from './screens/ChatScreen';
+import RecommendationsScreen from './screens/advices/RecommendationsScreen';
+import { InsightsScreen } from './screens/InsightsScreen';
+import { HistoryScreen } from './screens/HistoryScreen';
+import { FeedScreen } from './features/feed/FeedScreen';
+import { SleepScreen } from './screens/sleep/SleepScreen';
+import { DreamDetailScreen } from './screens/sleep/DreamDetailScreen';
+import { DreamAnalysisScreen } from './screens/sleep/DreamAnalysisScreen';
+import { StatsScreen } from './screens/StatsScreen';
 
-// Новые импорты для daily
-import DailyConvoScreen from './features/daily/DailyConvoScreen';
-import DailyConvoChat from './features/daily/DailyConvoChat';
+// Заглушка
+const PlaceholderScreen = ({ title }: { title: string }) => (
+  <div className="min-h-screen flex items-center justify-center text-white relative font-sans bg-[#09090b]">
+    <div className="text-center">
+      <h1 className="text-3xl font-serif mb-2">{title}</h1>
+      <p className="text-white/50">Страница в разработке</p>
+    </div>
+  </div>
+);
 
-function DreamBlocksRedirect() {
-  const { id } = useParams<{ id: string }>();
-  if (!id) {
-    return <Navigate to="/dreams" replace />;
+// Компонент защиты роутов
+const ProtectedRoute = ({ children }: { children: JSX.Element }) => {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return <div className="min-h-screen flex items-center justify-center text-white bg-[#0F0F11]">Загрузка...</div>;
   }
-  return <Navigate to={`/dreams/${id}?view=blocks`} replace />;
-}
 
-function DreamEditorWrapper() {
-  const handleSave = async (_text: string): Promise<void> => {
-    // Логика сохранения
-  };
+  if (!user) {
+    return <Navigate to="/auth" replace />;
+  }
 
-  return <DreamEditor onSave={handleSave} />;
-}
+  return children;
+};
 
 function App() {
+  const { user, loading } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  // === ЛОГИКА: ВСЕГДА ОТКРЫВАТЬ ХОУМ СКРИН ПРИ ЗАГРУЗКЕ ===
+  useEffect(() => {
+    // Ждем, пока загрузится авторизация
+    if (!loading && user) {
+      // Перенаправляем на '/' если это первая загрузка приложения
+      navigate('/', { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading]); 
+
+  if (loading) {
+    return <div className="min-h-screen bg-[#0F0F11]" />;
+  }
+
   return (
-    <ProfileProvider>
-      <BrowserRouter>
-        <Routes>
-          <Route path="/auth" element={<AuthScreen />} />
+    <>
+      {/* 
+          ВСТАВЛЯЕМ МОДАЛКУ ЗДЕСЬ.
+          Она будет поверх всех экранов благодаря z-index в самом компоненте.
+          Покажется только если пользователь авторизован (так как она внутри App, а App рендерится всегда),
+          но логика внутри FeedbackModal сама решит, когда ей всплыть.
+      */}
+      {user && <FeedbackModal />}
 
-          <Route
-            path="/"
-            element={
-              <PrivateRoute>
-                <ProfileScreen />
-              </PrivateRoute>
-            }
-          />
+      <Routes>
+        <Route path="/auth" element={!user ? <AuthScreen /> : <Navigate to="/" />} />
+        <Route path="/register" element={!user ? <RegisterScreen /> : <Navigate to="/" />} />
 
-          {/* Daily list / entry points (ProfileScreen также умеет обрабатывать календарь/фильтрацию) */}
-          <Route
-            path="/daily"
-            element={
-              <PrivateRoute>
-                {/* Можно заменить на Dedicated DailyListScreen при желании */}
-                <ProfileScreen />
-              </PrivateRoute>
-            }
-          />
+        {/* ГЛАВНАЯ */}
+        <Route path="/" element={<ProtectedRoute><HomeScreen /></ProtectedRoute>} />
+        
+        {/* ЛЕНТА */}
+        <Route path="/feed" element={<ProtectedRoute><FeedScreen /></ProtectedRoute>} />
 
-          {/* Просмотр отдельной дневной записи */}
-          <Route
-            path="/daily/:id"
-            element={
-              <PrivateRoute>
-                <DailyConvoScreen />
-              </PrivateRoute>
-            }
-          />
+        {/* ЧАТ */}
+        <Route path="/chat" element={<ProtectedRoute><ChatScreen /></ProtectedRoute>} />
+        <Route path="/chat/:dateId" element={<ProtectedRoute><ChatScreen /></ProtectedRoute>} />
+        <Route path="/insights" element={<ProtectedRoute><InsightsScreen /></ProtectedRoute>} />
+        <Route path="/history" element={<ProtectedRoute><HistoryScreen /></ProtectedRoute>} />
 
-          {/* Чат для дневной записи */}
-          <Route
-            path="/daily/:id/chat"
-            element={
-              <PrivateRoute>
-                <DailyConvoChat />
-              </PrivateRoute>
-            }
-          />
+        {/* НАСТРОЕНИЕ */}
+        <Route path="/mood" element={<ProtectedRoute><MoodSelectionScreen /></ProtectedRoute>} />
+        <Route path="/mood/:categoryId" element={<ProtectedRoute><MoodDetailScreen /></ProtectedRoute>} />
 
-          <Route
-            path="/dreams"
-            element={
-              <PrivateRoute>
-                <DreamsScreen />
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/feed"
-            element={
-              <PrivateRoute>
-                <FeedScreen />
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/dreams/new"
-            element={
-              <PrivateRoute>
-                <DreamEditorWrapper />
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/dreams/:id/blocks"
-            element={
-              <PrivateRoute>
-                <DreamBlocksRedirect />
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/dreams/:id/chat"
-            element={
-              <PrivateRoute>
-                <DreamChat />
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/dreams/:id/final"
-            element={
-              <PrivateRoute>
-                <DreamFinalDialog open={false} onClose={() => {}} interpretation="" />
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/dreams/date/:date"
-            element={
-              <PrivateRoute>
-                <DreamsByDateScreen />
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/dreams/:id"
-            element={
-              <PrivateRoute>
-                <DreamDetail />
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/dreams/:id/similar"
-            element={
-              <PrivateRoute>
-                <SimilarArtworksScreen />
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/dreams/:id/artwork-chat/:artworkIdx"
-            element={
-              <PrivateRoute>
-                <ArtworkChat />
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/calendar/month"
-            element={
-              <PrivateRoute>
-                <MonthDashboardScreen />
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/stats/:metricKey"
-            element={
-              <PrivateRoute>
-                <MetricDetailScreen />
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/profile/user"
-            element={
-              <PrivateRoute>
-                <UserProfileScreen />
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/profile/edit"
-            element={
-              <PrivateRoute>
-                <ProfileEditForm />
-              </PrivateRoute>
-            }
-          />
+        {/* СОВЕТЫ */}
+        <Route path="/recommendations" element={<ProtectedRoute><RecommendationsScreen /></ProtectedRoute>} />
 
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </BrowserRouter>
-    </ProfileProvider>
+        {/* СТАТИСТИКА */}
+        <Route path="/stats" element={<ProtectedRoute><StatsScreen /></ProtectedRoute>} />
+
+        {/* СОН (ДНЕВНИК) */}
+        <Route path="/sleep" element={<ProtectedRoute><SleepScreen /></ProtectedRoute>} />
+        <Route path="/dream/:id" element={<ProtectedRoute><DreamDetailScreen /></ProtectedRoute>} />
+        <Route path="/dream/:id/analysis" element={<ProtectedRoute><DreamAnalysisScreen /></ProtectedRoute>} />
+        
+        {/* Редирект для старых ссылок */}
+        <Route path="/journal" element={<Navigate to="/feed" replace />} />
+
+        {/* Любой неизвестный путь -> На главную */}
+        <Route path="*" element={<Navigate to="/" />} />
+      </Routes>
+    </>
   );
 }
 
